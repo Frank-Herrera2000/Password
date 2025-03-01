@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Generador de Contraseñas Diarias</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 20px;
+            position: relative;
+        }
+        .clear-history-container {
+            position: absolute;
+            top: 50px;
+            right: -10px;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .generator {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        #clear-history {
+            background-color: #e74c3c;
+            font-size: 0.9em;
+            padding: 8px 15px;
+        }
+        #clear-history:hover {
+            background-color: #c0392b;
+        }
+        #result {
+            text-align: center;
+            font-size: 24px;
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #ecf0f1;
+            border-radius: 5px;
+            min-height: 40px;
+        }
+        #password-history {
+            margin-top: 20px;
+        }
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .history-table th, .history-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        .history-table th {
+            background-color: #3498db;
+            color: white;
+        }
+        .history-table tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="clear-history-container">
+            <button id="clear-history" onclick="clearHistory()">Borrar Historial</button>
+        </div>
+        <h1>Generador de Contraseñas Diarias</h1>
+        <div class="generator">
+            <button onclick="generatePassword()">Generar Contraseña</button>
+        </div>
+        <div id="result"></div>
+        
+        <div id="password-history">
+            <h2>Historial de Contraseñas</h2>
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Día</th>
+                        <th>Contraseña</th>
+                    </tr>
+                </thead>
+                <tbody id="history-body">
+                    <!-- Las contraseñas se agregarán aquí dinámicamente -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Base de datos IndexedDB para almacenar historial persistente
+        let db;
+        const dbName = 'PasswordHistoryDB';
+        const storeName = 'passwordHistory';
+
+        // Abrir o crear la base de datos
+        function openDatabase() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(dbName, 1);
+
+                request.onupgradeneeded = (event) => {
+                    db = event.target.result;
+                    db.createObjectStore(storeName, { 
+                        keyPath: 'date', 
+                        unique: true 
+                    });
+                };
+
+                request.onsuccess = (event) => {
+                    db = event.target.result;
+                    resolve(db);
+                };
+
+                request.onerror = (event) => {
+                    reject('Error abriendo la base de datos');
+                };
+            });
+        }
+
+        // Guardar entrada en la base de datos
+        function saveHistoryEntry(entry) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.put(entry);
+
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject('Error guardando entrada');
+            });
+        }
+
+        // Obtener todo el historial
+        function getAllHistory() {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction([storeName], 'readonly');
+                const store = transaction.objectStore(storeName);
+                const request = store.getAll();
+
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject('Error obteniendo historial');
+            });
+        }
+
+        // Borrar todo el historial
+        function clearAllHistory() {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.clear();
+
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject('Error borrando historial');
+            });
+        }
+
+        // Función para obtener el nombre del día en español
+        function getDayName(day) {
+            const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+            return days[day];
+        }
+
+        // Renderizar historial en la tabla
+        async function renderHistory() {
+            const historyBody = document.getElementById('history-body');
+            try {
+                const history = await getAllHistory();
+                // Ordenar de más reciente a más antiguo
+                history.sort((a, b) => new Date(b.date) - new Date(a.date));
+                
+                // Limitar a 10 entradas
+                const limitedHistory = history.slice(0, 10);
+                
+                historyBody.innerHTML = limitedHistory.map(entry => `
+                    <tr>
+                        <td>${entry.date}</td>
+                        <td>${entry.day}</td>
+                        <td>${entry.password}</td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Error al renderizar historial:', error);
+            }
+        }
+
+        // Borrar historial
+        async function clearHistory() {
+            // Mostrar confirmación
+            const confirmacion = confirm('¿Estás seguro de que quieres borrar todo el historial de contraseñas? Esta acción no se puede deshacer.');
+            
+            if (!confirmacion) {
+                return; // Salir si el usuario cancela
+            }
+
+            try {
+                await clearAllHistory();
+                await renderHistory();
+                alert('Historial borrado exitosamente');
+            } catch (error) {
+                console.error('Error borrando historial:', error);
+            }
+        }
+
+        function generatePassword() {
+            const resultDiv = document.getElementById('result');
+            const today = new Date();
+            const day = today.getDay(); // 0 (domingo) - 6 (sábado)
+            const dayName = getDayName(day);
+
+            // Manejar domingo y viernes
+            switch(day) {
+                case 0: // Domingo
+                    resultDiv.textContent = 'Hoy es domingo. No hay contraseña.';
+                    resultDiv.style.color = '#e74c3c';
+                    return;
+                case 5: // Viernes
+                    resultDiv.textContent = 'Hoy es viernes. No hay contraseña.';
+                    resultDiv.style.color = '#e74c3c';
+                    return;
+            }
+
+            // Generar semilla basada en el año, mes y día
+            const seed = today.getFullYear() * 10000 + 
+                        (today.getMonth() + 1) * 100 + 
+                        today.getDate();
+            
+            // Caracteres permitidos (sin 0 ni o)
+            const chars = '123456789abcdefghijklmnpqrstuvwxyz';
+            
+            // Función de generación determinística
+            function generateDeterministicPassword(seed) {
+                let password = '';
+                let currentSeed = seed;
+                
+                for (let i = 0; i < 6; i++) {
+                    currentSeed = (currentSeed * 1103515245 + 12345) & 0x7fffffff;
+                    const index = currentSeed % chars.length;
+                    password += chars[index];
+                }
+                
+                return password;
+            }
+
+            const password = generateDeterministicPassword(seed);
+            resultDiv.textContent = `${dayName}: Contraseña ${password}`;
+            resultDiv.style.color = '#333'; // Restaurar color de texto
+
+            // Formatear la fecha
+            const formattedDate = today.toLocaleDateString('es-ES', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+
+            // Guardar en IndexedDB
+            saveHistoryEntry({
+                date: formattedDate,
+                day: dayName,
+                password: password
+            }).then(() => {
+                // Renderizar historial actualizado
+                renderHistory();
+            }).catch(error => {
+                console.error('Error guardando entrada:', error);
+            });
+        }
+
+        // Inicializar la aplicación
+        async function initApp() {
+            try {
+                await openDatabase();
+                await renderHistory();
+                generatePassword();
+            } catch (error) {
+                console.error('Error inicializando la aplicación:', error);
+            }
+        }
+
+        // Iniciar la aplicación cuando el DOM esté listo
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
